@@ -155,7 +155,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # uvicorn.run(app, host="127.0.0.1", port=8000)
+    pass
     # nathing()
     # df = pd.read_csv('X.csv')[['id','age','friend_count','Extroversion','Neuroticism','Agreeableness','Conscientiousness','Openness','average_likes','count_groups','count_images','total_posts','created_posts','ratio_post','frequency','contained_emoji','min_diff','max_diff','count_question_mark','count_exclamation_mark','average_post_len','average_sentence_len','average_used_ya']]
     # print(get_prediction(df))

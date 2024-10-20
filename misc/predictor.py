@@ -3,12 +3,13 @@ import joblib
 from sklearn.preprocessing import LabelEncoder
 import numpy as np 
 import pandas as pd
+import os
 
 
-loaded_encoder = joblib.load('models\\w20_10_6_35.pkl')
+loaded_encoder = joblib.load(os.path.join(os.getcwd(), "models", "w20_10_6_35.pkl"))
 
 model = CatBoostClassifier()
-model.load_model("models\\w20_10_6_12.cbm")
+model.load_model(os.path.join(os.getcwd(), "models", "w20_10_6_12.cbm"))
 
 
 def get_prediction(inference_dataframe: pd.DataFrame) -> list:

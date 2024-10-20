@@ -1,3 +1,9 @@
+import os
+
+
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
+
 from fastapi import FastAPI, Request, UploadFile, HTTPException, status, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -8,7 +14,7 @@ import aiofiles
 import datetime
 import uvicorn
 import sqlite3
-import os
+
 
 from misc.predictor import get_prediction
 from misc.convert import process_tab

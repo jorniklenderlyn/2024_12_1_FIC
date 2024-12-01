@@ -26,7 +26,7 @@ def get_prediction(input_df: pd.DataFrame) -> list:
 
     # TODO: сделаешь подгрузку модели хз откуда с HF или с файла
     # model_id = "sergeyzh/rubert-tiny-turbo"    
-    model = AutoModelForSequenceClassification.from_pretrained('danilka200300/results')
+    model = AutoModelForSequenceClassification.from_pretrained('danilka200300/results3')
     tokenizer = AutoTokenizer.from_pretrained('sergeyzh/rubert-tiny-turbo')
 
     # токенизируешь

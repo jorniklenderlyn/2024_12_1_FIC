@@ -11,9 +11,10 @@ import requests
 import json
 
 
+# Отправка файла
 file = open(<filename>, "rb").read()
 res = requests.post('http://127.0.0.1:8000/predict/', files={'file': file})
-#------------------
+# Отправка json
 with open(<filename>, 'r', encoding='utf-8') as f:
     data = json.load(f)
 res = requests.post('http://127.0.0.1:8000/predict/', json=data)

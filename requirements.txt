@@ -1,13 +1,10 @@
 aiofiles
 catboost
 fastapi
-joblib
-matplotlib
 numpy
 pandas
 python-multipart
-scikit-learn
 torch
-tqdm
 uvicorn
 transformers
+requests

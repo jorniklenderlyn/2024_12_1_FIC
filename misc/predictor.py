@@ -1,21 +1,46 @@
-# from catboost import CatBoostClassifier
-# import joblib
-# from sklearn.preprocessing import LabelEncoder
-# import numpy as np 
 import pandas as pd
-# import os
+import numpy as np
+import torch
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, TrainingArguments, Trainer
+from torch.utils.data import Dataset
 
 
-# loaded_encoder = joblib.load(os.path.join(os.getcwd(), "models", "w20_10_6_35.pkl"))
-
-# model = CatBoostClassifier()
-# model.load_model(os.path.join(os.getcwd(), "models", "w20_10_6_12.cbm"))
+def create_template_string(row):
+        return f"Куда собеседуется кандидат: {row['position']}, Ключевые навыки кандидата: {row['key_skills']}, Опыт работы кандидата: {row['work_experience']}, Зарплатные ожидания: {row['salary']}, Компания куда собеседуется кандидат: {row['client_name']}"
 
 
-def get_prediction(inference_dataframe: pd.DataFrame) -> list:
-    return [i for i in range(inference_dataframe.shape[0])]
-    # y_pred = model.predict(inference_dataframe.drop('id',axis =1))
-    # y_pred_decoded = loaded_encoder.inverse_transform(y=y_pred)
-    # answer = pd.DataFrame({'id': inference_dataframe['id'], 
-    #                        'target': y_pred_decoded})
-    # return answer["target"].tolist()
+def tokenize_data(tokenizer, data, max_length=2048):
+        return tokenizer(data, truncation=True, padding=True, max_length=max_length, return_tensors="pt")
+
+
+def get_prediction(input_df: pd.DataFrame) -> list:
+    # return pd.DataFrame([i for i in range(input_df.shape[0])])
+    # Применяем функцию к каждой строке датафрейма
+    input_df['template_string'] = input_df.apply(create_template_string, axis=1)
+
+    # Обработка целевой переменной
+    target = input_df['grade_proof']
+    tag2id = {elem: i for i, elem in enumerate(target.unique())}
+    id2tag = {i: elem for i, elem in enumerate(target.unique())}
+    target = target.apply(lambda x: tag2id[x])
+
+    # TODO: сделаешь подгрузку модели хз откуда с HF или с файла
+    # model_id = "sergeyzh/rubert-tiny-turbo"    
+    model = AutoModelForSequenceClassification.from_pretrained('danilka200300/results')
+    tokenizer = AutoTokenizer.from_pretrained('sergeyzh/rubert-tiny-turbo')
+
+    # токенизируешь
+    tokenized_data = tokenize_data(tokenizer, input_df['template_string'].tolist())
+
+    # предсказываешь, возвращай результат в виде списка лейблов уже округленных
+    model.eval()
+    label2text = {
+         0: "Не прошел",
+         1: "Прошел"
+    }
+    with torch.no_grad():
+        outputs = model(**tokenized_data)
+        predictions = torch.argmax(outputs.logits, dim=1).tolist()
+        predictions = [label2text[pred] for pred in predictions]
+    
+    return predictions  

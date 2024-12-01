@@ -4,8 +4,8 @@ import os
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
 
-from fastapi import FastAPI, Request, UploadFile, HTTPException, status, File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, UploadFile, HTTPException, status, File, Body, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import Annotated
@@ -14,10 +14,14 @@ import aiofiles
 import datetime
 import uvicorn
 import sqlite3
+import io
+import tempfile
+import uuid
+# import redis
 
 
 from misc.predictor import get_prediction
-from misc.convert import process_tab
+# from misc.convert import process_tab
 
 
 app = FastAPI()
@@ -26,131 +30,104 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 templates = Jinja2Templates(directory="templates")
 
-
-def get_user_ids(connection):
-    ids = pd.read_sql_query("SELECT id FROM user", connection)
-    return ids['id'].to_list() 
+# redis_client = redis.Redis(host='192.168.56.103', port=6379, db=0)
+dummy_storage = {}
 
 
-def get_user_info(user_id, connection):
-    info = pd.read_sql_query(f"SELECT * FROM user WHERE id = {user_id}", connection)
-    info = info.to_dict()
-    res = dict()
-    for k in info:
-        res[k] = info[k][0]
-    return res
+def get_response_df(input_df: pd.DataFrame) -> pd.DataFrame:
 
-
-def get_user_tables(user_id, connection):
-    if user_id == -1:
-        df_post = pd.read_sql_query("SELECT * FROM post", connection)
-        df_photo = pd.read_sql_query("SELECT * FROM photo", connection)
-        df_group_table = pd.read_sql_query("SELECT * FROM group_table", connection)
-        df_friend = pd.read_sql_query("SELECT * FROM friend", connection)
-        df_biography = pd.read_sql_query("SELECT * FROM biography", connection)
-        df_user = pd.read_sql_query("SELECT * FROM user", connection)
-    else:
-        df_post = pd.read_sql_query(f"SELECT * FROM post WHERE user_id = {user_id}", connection)
-        df_photo = pd.read_sql_query(f"SELECT * FROM photo WHERE user_id = {user_id}", connection)
-        df_group_table = pd.read_sql_query(f"SELECT * FROM group_table WHERE user_id = {user_id}", connection)
-        df_friend = pd.read_sql_query(f"SELECT * FROM friend WHERE user_id = {user_id}", connection)
-        df_biography = pd.read_sql_query(f"SELECT * FROM biography WHERE user_id = {user_id}", connection)
-        df_user = pd.read_sql_query(f"SELECT * FROM user WHERE id = {user_id}", connection)
-    return {"post": df_post, "photo": df_photo, "group_table": df_group_table, "friend": df_friend, "biography": df_biography, "user": df_user}
-
-
-def get_users_with_type(path_to_db) -> pd.DataFrame:
-    connection = sqlite3.connect(path_to_db)
-    # user_ids = get_user_ids(connection)
-    tables = get_user_tables(-1, connection)
-    connection.close()
-
-    X = process_tab(df_post=tables["post"], df_user=tables["user"], df_photo=tables["photo"], df_friend=tables["friend"], df_group_table=tables["group_table"])
-    # X.to_csv("X.csv")
+    X = pd.DataFrame({"data": [i for i in range(10)]})
     Y_ = get_prediction(X)
 
-    df_user = tables["user"]
-    df_user["predict"] = Y_
-    # return X
-    return df_user
+    inference_df = X
+    inference_df["predict"] = Y_
+    return inference_df
 
 
-@app.get("/get-result/", response_class=HTMLResponse)
-async def get_result(request: Request, db_name: str='db.sqlite'):
-    path_to_db = os.path.join(os.getcwd(), 'temp', db_name)
-
-    if not os.path.exists(path_to_db):
-        return "data does not exist!"
-    
-    result = get_users_with_type(path_to_db)
-    # res = get_user_with_type(path_to_db)
-    columns_ = result.columns.to_list()
-    columns_[0] = 'db_id'
-    result.columns = columns_
-
-    columns = result.columns
-    data = result.to_numpy()
-
-    # for r in res:
-    #     row = []
-    #     for k in r:
-    #         row.append(r[k])
-    #     data.append(row)
+@app.post("/predict/")
+async def predict_pep(request: Request, file: UploadFile = File(None)):
     try:
-        os.remove(path_to_db)
+        data = await request.json()
     except:
-        print("Error, when deleting temp file!")
-        
+        data = None
+
+    if data:
+        # Handle JSON input
+        input_df = pd.DataFrame(data)
+        result = get_prediction(input_df)
+    elif file:
+        # Handle file input
+        content = await file.read()
+        input_df = pd.read_json(io.BytesIO(content))
+        result = get_prediction(input_df)
+    else:
+        return {"error": "No valid input provided"}
+    inference_df = pd.DataFrame({"id": [i for i in range(len(result))], "result": result})
+    return inference_df.to_dict(orient="records")
+
+
+@app.get("/predict/{unique_id}/", response_class=HTMLResponse)
+async def predict_gep(request: Request, unique_id: str):
+    # Retrieve the processed data from temporary storage
+    # json_data_str = redis_client.get(unique_id)
+    json_data_str = dummy_storage.get(unique_id)
+    
+    if json_data_str is None:
+        raise HTTPException(status_code=404, detail="Processed data not found")
+    
+    # Optionally, you can perform some operations on the DataFrame here
+    json_data = eval(json_data_str)
+    inference_df = pd.DataFrame(json_data)
+    result = get_prediction(inference_df)
+    columns = ['id', 'result']
+    data = [[i, result[i]] for i in range(len(result))]
+    
+    # Return the processed data
     return templates.TemplateResponse(
-        'table2.html',
-        {'request': request, 'columns': columns, 'data': data}
+        'table.html',
+        {'request': request, 'columns': columns, 'data': data, 'for_download': str(pd.DataFrame({"id": [i for i in range(len(result))], "result": result}).to_json(orient="records"))}
     )
-    # return 'hello, world!'
 
 
-@app.post("/get-result/")
-async def create_file(file: UploadFile):
-    time_stamp = datetime.datetime.now().microsecond
-    filename = f'db{time_stamp}.db'
-    contents = await file.read()
-    async with aiofiles.open(os.path.join(os.getcwd(), 'temp', filename), 'wb') as f:
-        await f.write(contents)
+# Temporary storage for processed data
+temp_storage = {}
 
-    path_to_db = os.path.join(os.getcwd(), 'temp', filename)
-    result = get_users_with_type(path_to_db)
-    result = result[['id', 'vk_id', 'predict']]
-    columns_ = result.columns.to_list()
-    columns_[0] = 'db_id'
-    result.columns = columns_
 
-    data = result.to_dict()
-
-    try:
-        os.remove(os.path.join(os.getcwd(), 'temp', filename))
-    except:
-        print("Error, when deleting temp file!")
+@app.post("/upload/")
+async def upload(file: UploadFile = File(None)):
+    global dummy_storage
+    if file:
+        # Handle file input
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_file_path = temp_file.name
+            try:
+                # Write the file content to the temporary file
+                while content := await file.read(1024):  # Read in chunks of 1024 bytes
+                    temp_file.write(content)
+                temp_file.flush()
+                temp_file.close()
+                
+                # Process the temporary file
+                df = pd.read_json(temp_file_path)
+            finally:
+                # Clean up the temporary file
+                os.remove(temp_file_path)
+    else:
+        raise HTTPException(status_code=400, detail="No valid input provided")
     
-    return {"predict": data}
-
-
-@app.post('/upload')
-async def upload(file: UploadFile):
-    time_stamp = datetime.datetime.now().microsecond
-    filename = f'db{time_stamp}.db'
-    try:
-        contents = await file.read()
-        async with aiofiles.open(os.path.join(os.getcwd(), 'temp', filename), 'wb') as f:
-            await f.write(contents)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail='There was an error uploading the file',
-        )
-    finally:
-        await file.close()
-
-    return RedirectResponse(url=f"/get-result?db_name={filename}", status_code=status.HTTP_302_FOUND)
-    # return {'message': f'Successfuly uploaded {filename}', 'time': time_stamp}
+    # Optionally, you can perform some operations on the DataFrame here
+    
+    # Convert the DataFrame back to JSON format for the response
+    json_data = df.to_dict(orient="records")
+    
+    # Generate a unique identifier
+    unique_id = str(uuid.uuid4())
+    
+    # Store the processed data temporarily in Redis
+    dummy_storage[unique_id] = str(json_data)
+    
+    # Redirect to another endpoint with the unique identifier
+    return RedirectResponse(url=f"/predict/{unique_id}/", status_code=302)
 
 
 @app.get('/', response_class=HTMLResponse)
@@ -161,9 +138,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    # uvicorn.run(app, host="127.0.0.1", port=8000)
-    pass
-    # nathing()
-    # df = pd.read_csv('X.csv')[['id','age','friend_count','Extroversion','Neuroticism','Agreeableness','Conscientiousness','Openness','average_likes','count_groups','count_images','total_posts','created_posts','ratio_post','frequency','contained_emoji','min_diff','max_diff','count_question_mark','count_exclamation_mark','average_post_len','average_sentence_len','average_used_ya']]
-    # print(get_prediction(df))
-    # print(df[['id','age','friend_count','Extroversion','Neuroticism','Agreeableness','Conscientiousness','Openness','average_likes','count_groups','count_images','total_posts','created_posts','ratio_post','frequency','contained_emoji','min_diff','max_diff','count_question_mark','count_exclamation_mark','average_post_len','average_sentence_len','average_used_ya']])
+    uvicorn.run(app, host="127.0.0.1", port=8000)

@@ -85,8 +85,6 @@ res = requests.post('http://127.0.0.1:8000/predict/', json=data)
   - `test_file_handleI.py`: Скрипт для тестирования обработки файлов.
   - `test_json_handleI.py`: Скрипт для тестирования обработки JSON.
 
-## Файлы
-
 ### `gritignore`
 - **Описание**: Файл `.gitignore` для игнорирования определенных файлов и каталогов в репозитории Git.
 
